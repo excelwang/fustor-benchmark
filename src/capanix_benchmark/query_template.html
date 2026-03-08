@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>capanix-benchmark report</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: Arial, sans-serif; margin: 24px; color: #111; }
+    h1 { margin-bottom: 8px; }
+    .muted { color: #666; }
+    table { border-collapse: collapse; width: 100%; margin-top: 16px; }
+    th, td { border: 1px solid #ddd; padding: 8px; text-align: right; }
+    th:first-child, td:first-child { text-align: left; }
+    th { background: #f7f7f7; }
+    .cards { display: grid; grid-template-columns: repeat(3, minmax(180px, 1fr)); gap: 12px; margin-top: 16px; }
+    .card { border: 1px solid #ddd; border-radius: 8px; padding: 12px; }
+    .card .k { font-size: 12px; color: #666; }
+    .card .v { font-size: 22px; font-weight: bold; margin-top: 4px; }
+    pre { background: #fafafa; border: 1px solid #eee; padding: 10px; overflow: auto; }
+  </style>
+</head>
+<body>
+  <h1>capanix-benchmark query report</h1>
+  <div class="muted">Generated at {{timestamp}}</div>
+
+  <div class="cards">
+    <div class="card"><div class="k">Total files</div><div class="v">{{total_files}}</div></div>
+    <div class="card"><div class="k">Total dirs</div><div class="v">{{total_dirs}}</div></div>
+    <div class="card"><div class="k">Requests / Concurrency</div><div class="v">{{reqs}} / {{concurrency}}</div></div>
+    <div class="card"><div class="k">OS Integrity interval</div><div class="v">{{integrity_interval}}s</div></div>
+    <div class="card"><div class="k">tree gain vs OS Integrity</div><div class="v">{{tree_gain}}</div></div>
+    <div class="card"><div class="k">on-demand gain vs OS Integrity</div><div class="v">{{ondemand_gain}}</div></div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Metric</th>
+        <th>OS Baseline</th>
+        <th>OS Integrity</th>
+        <th>tree (materialized)</th>
+        <th>on-demand-force-find</th>
+      </tr>
+    </thead>
+    <tbody id="rows"></tbody>
+  </table>
+
+  <h3>Raw JSON</h3>
+  <pre id="json"></pre>
+
+  <script>
+    const data = /* RESULTS_JSON_DATA */;
+
+    const rows = [
+      ["Avg latency (ms)", data.os_baseline.avg, data.os_integrity.avg, data.tree_materialized.avg, data.find_on_demand.avg],
+      ["P50 latency (ms)", data.os_baseline.p50, data.os_integrity.p50, data.tree_materialized.p50, data.find_on_demand.p50],
+      ["P95 latency (ms)", data.os_baseline.p95, data.os_integrity.p95, data.tree_materialized.p95, data.find_on_demand.p95],
+      ["P99 latency (ms)", data.os_baseline.p99, data.os_integrity.p99, data.tree_materialized.p99, data.find_on_demand.p99],
+      ["QPS", data.os_baseline.qps, data.os_integrity.qps, data.tree_materialized.qps, data.find_on_demand.qps],
+    ];
+
+    const tbody = document.getElementById("rows");
+    for (const row of rows) {
+      const tr = document.createElement("tr");
+      row.forEach((v, idx) => {
+        const td = document.createElement("td");
+        td.textContent = idx === 0 ? v : Number(v).toFixed(2);
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    }
+
+    document.getElementById("json").textContent = JSON.stringify(data, null, 2);
+  </script>
+</body>
+</html>
