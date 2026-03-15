@@ -3,4 +3,5 @@ __pycache__/
 .pytest_cache/
 dist/
 *.egg-info/
+uv.lock
 capanix-benchmark-run/

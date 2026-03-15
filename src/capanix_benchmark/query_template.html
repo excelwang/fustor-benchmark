@@ -1,76 +1,397 @@
-<!doctype html>
-<html lang="en">
+<!DOCTYPE html>
+<html>
+
 <head>
-  <meta charset="utf-8" />
-  <title>capanix-benchmark report</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <style>
-    body { font-family: Arial, sans-serif; margin: 24px; color: #111; }
-    h1 { margin-bottom: 8px; }
-    .muted { color: #666; }
-    table { border-collapse: collapse; width: 100%; margin-top: 16px; }
-    th, td { border: 1px solid #ddd; padding: 8px; text-align: right; }
-    th:first-child, td:first-child { text-align: left; }
-    th { background: #f7f7f7; }
-    .cards { display: grid; grid-template-columns: repeat(3, minmax(180px, 1fr)); gap: 12px; margin-top: 16px; }
-    .card { border: 1px solid #ddd; border-radius: 8px; padding: 12px; }
-    .card .k { font-size: 12px; color: #666; }
-    .card .v { font-size: 22px; font-weight: bold; margin-top: 4px; }
-    pre { background: #fafafa; border: 1px solid #eee; padding: 10px; overflow: auto; }
-  </style>
+    <meta charset="utf-8">
+    <title>Capanix Benchmark Report</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            margin: 40px;
+            background: #f4f7f6;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: auto;
+            background: white;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+        }
+
+        h1 {
+            color: #2c3e50;
+            border-bottom: 2px solid #eee;
+            padding-bottom: 15px;
+            margin-top: 0;
+        }
+
+        h2 {
+            color: #34495e;
+            margin-top: 40px;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 10px;
+        }
+
+        .summary-group {
+            margin-bottom: 30px;
+        }
+
+        .summary-title {
+            font-size: 18px;
+            font-weight: bold;
+            color: #7f8c8d;
+            margin-bottom: 15px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .summary {
+            display: flex;
+            justify-content: space-between;
+            margin: 0 -10px 20px -10px;
+        }
+
+        .stat-card {
+            background: #fff;
+            padding: 20px;
+            border-radius: 10px;
+            flex: 1;
+            margin: 0 10px;
+            text-align: center;
+            border: 1px solid #eee;
+            border-top: 5px solid #3498db;
+            transition: transform 0.2s;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .stat-card.tree {
+            border-top-color: #2ecc71;
+        }
+
+        .stat-card.find {
+            border-top-color: #1abc9c;
+        }
+
+        .stat-card.integrity {
+            border-top-color: #e74c3c;
+        }
+
+        .stat-card.gain {
+            border-top-color: #f1c40f;
+        }
+
+        .stat-value {
+            font-size: 28px;
+            font-weight: bold;
+            margin: 10px 0;
+            color: #2c3e50;
+        }
+
+        .stat-label {
+            font-size: 14px;
+            color: #7f8c8d;
+            text-transform: uppercase;
+        }
+
+        .chart-row {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 40px;
+            align-items: flex-start;
+        }
+
+        .chart-box {
+            flex: 1;
+            background: #fff;
+            padding: 15px;
+            border-radius: 10px;
+            border: 1px solid #eee;
+            min-width: 0;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 320px;
+            width: 100%;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            font-size: 14px;
+            table-layout: fixed;
+        }
+
+        th,
+        td {
+            text-align: left;
+            padding: 12px;
+            border-bottom: 1px solid #eee;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        th {
+            background: #f8f9fa;
+            color: #2c3e50;
+            font-weight: 600;
+        }
+
+        .info-bar {
+            background: #e8f4fd;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 30px;
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            font-size: 13px;
+        }
+
+        .info-item {
+            display: flex;
+            gap: 10px;
+        }
+
+        .info-label {
+            color: #5a6c7a;
+            font-weight: 600;
+            min-width: 100px;
+        }
+
+        .note-box {
+            background: #fff9db;
+            padding: 15px;
+            border-left: 5px solid #fcc419;
+            margin: 20px 0;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        .task-name {
+            font-weight: bold;
+            color: #2980b9;
+        }
+
+        .param-value {
+            color: #e67e22;
+            font-weight: bold;
+        }
+
+        .optimistic-flag {
+            color: #e74c3c;
+            font-weight: bold;
+        }
+    </style>
 </head>
+
 <body>
-  <h1>capanix-benchmark query report</h1>
-  <div class="muted">Generated at {{timestamp}}</div>
+    <div class="container">
+        <h1>Capanix Performance Benchmark</h1>
+        <div class="info-bar">
+            <div class="info-item"><span class="info-label">📅 Timestamp:</span> <strong>{{timestamp}}</strong></div>
+            <div class="info-item"><span class="info-label">📂 Data Scale:</span> <strong>{{total_files}} files
+                    ({{total_dirs}} dirs)</strong></div>
+            <div class="info-item"><span class="info-label">🚀 Requests:</span> <strong>{{reqs}}</strong></div>
+            <div class="info-item"><span class="info-label">📂 Target Depth:</span> <strong>{{depth}}</strong></div>
+            <div class="info-item"><span class="info-label">👥 Concurrency:</span> <strong>{{concurrency}}</strong>
+            </div>
+            <div class="info-item"><span class="info-label">⏱️ Integrity Intv:</span> <strong
+                    class="param-value">{{integrity_interval}}s</strong></div>
+        </div>
 
-  <div class="cards">
-    <div class="card"><div class="k">Total files</div><div class="v">{{total_files}}</div></div>
-    <div class="card"><div class="k">Total dirs</div><div class="v">{{total_dirs}}</div></div>
-    <div class="card"><div class="k">Requests / Concurrency</div><div class="v">{{reqs}} / {{concurrency}}</div></div>
-    <div class="card"><div class="k">OS Integrity interval</div><div class="v">{{integrity_interval}}s</div></div>
-    <div class="card"><div class="k">tree gain vs OS Integrity</div><div class="v">{{tree_gain}}</div></div>
-    <div class="card"><div class="k">on-demand gain vs OS Integrity</div><div class="v">{{ondemand_gain}}</div></div>
-  </div>
+        <div class="summary-group">
+            <div class="summary-title">Latency Summary (响应延迟)</div>
+            <div class="summary">
+                <div class="stat-card">
+                    <div class="stat-label">OS Baseline</div>
+                    <div class="stat-value">{{os_avg}} ms</div>
+                </div>
+                <div class="stat-card integrity">
+                    <div class="stat-label">OS Integrity <span class="optimistic-flag">(Best Case)</span></div>
+                    <div class="stat-value">{{os_integrity_avg}} ms</div>
+                </div>
+                <div class="stat-card tree">
+                    <div class="stat-label">tree (materialized)</div>
+                    <div class="stat-value">{{tree_avg}} ms</div>
+                </div>
+                <div class="stat-card gain">
+                    <div class="stat-label">Latency Speedup</div>
+                    <div class="stat-value" style="color: #2ecc71">{{gain_latency}}</div>
+                </div>
+            </div>
+        </div>
 
-  <table>
-    <thead>
-      <tr>
-        <th>Metric</th>
-        <th>OS Baseline</th>
-        <th>OS Integrity</th>
-        <th>tree (materialized)</th>
-        <th>on-demand-force-find</th>
-      </tr>
-    </thead>
-    <tbody id="rows"></tbody>
-  </table>
+        <div class="summary-group">
+            <div class="summary-title">Throughput Summary (系统吞吐率)</div>
+            <div class="summary">
+                <div class="stat-card">
+                    <div class="stat-label">OS Baseline</div>
+                    <div class="stat-value">{{os_qps}}</div>
+                </div>
+                <div class="stat-card integrity">
+                    <div class="stat-label">OS Integrity <span class="optimistic-flag">(Best Case)</span></div>
+                    <div class="stat-value">{{os_integrity_qps}}</div>
+                </div>
+                <div class="stat-card tree">
+                    <div class="stat-label">tree (materialized)</div>
+                    <div class="stat-value">{{tree_qps}}</div>
+                </div>
+                <div class="stat-card gain">
+                    <div class="stat-label">QPS Gain</div>
+                    <div class="stat-value" style="color: #2ecc71">{{gain_qps}}</div>
+                </div>
+            </div>
+        </div>
 
-  <h3>Raw JSON</h3>
-  <pre id="json"></pre>
+        <div class="chart-row">
+            <div class="chart-box">
+                <h3>Throughput (QPS) ↑</h3>
+                <div class="chart-container"><canvas id="qpsChart"></canvas></div>
+            </div>
+            <div class="chart-box">
+                <h3>Avg Latency (ms) ↓</h3>
+                <div class="chart-container"><canvas id="latencyChart"></canvas></div>
+            </div>
+            <div class="chart-box">
+                <h3>Latency Percentiles ↓</h3>
+                <div class="chart-container"><canvas id="lineChart"></canvas></div>
+            </div>
+        </div>
 
-  <script>
-    const data = /* RESULTS_JSON_DATA */;
+        <div class="note-box">
+            <strong>⚠️ 实验严谨性说明 (Scientific Scrutiny):</strong><br>
+            本次测试测得的 <strong>OS Integrity (Double Sampling)</strong> 延迟与吞吐率均为该方案的 <strong><span
+                    class="optimistic-flag">理论最优/最乐观情况 (Best-case Scenario)</span></strong>：
+            <ul>
+                <li>OS Integrity 路径通过双采样 + 静默窗口校验一致性，具备显著等待成本。</li>
+                <li><span class="task-name">tree</span> 反映物化索引查询路径；<span class="task-name">on-demand-force-find</span>
+                    反映强制新鲜查询路径。</li>
+                <li><strong>结论</strong>：在相同一致性约束下，fs-meta 查询路径可显著降低等待开销并提升吞吐。</li>
+            </ul>
+        </div>
 
-    const rows = [
-      ["Avg latency (ms)", data.os_baseline.avg, data.os_integrity.avg, data.tree_materialized.avg, data.find_on_demand.avg],
-      ["P50 latency (ms)", data.os_baseline.p50, data.os_integrity.p50, data.tree_materialized.p50, data.find_on_demand.p50],
-      ["P95 latency (ms)", data.os_baseline.p95, data.os_integrity.p95, data.tree_materialized.p95, data.find_on_demand.p95],
-      ["P99 latency (ms)", data.os_baseline.p99, data.os_integrity.p99, data.tree_materialized.p99, data.find_on_demand.p99],
-      ["QPS", data.os_baseline.qps, data.os_integrity.qps, data.tree_materialized.qps, data.find_on_demand.qps],
-    ];
+        <h2>Detailed Metrics Comparison (ms)</h2>
+        <table id="metrics-table">
+            <thead>
+                <tr>
+                    <th style="width: 20%">Metric</th>
+                    <th>OS Baseline</th>
+                    <th>OS Integrity <span class="optimistic-flag">*</span></th>
+                    <th>tree (materialized)</th>
+                    <th>on-demand-force-find</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
 
-    const tbody = document.getElementById("rows");
-    for (const row of rows) {
-      const tr = document.createElement("tr");
-      row.forEach((v, idx) => {
-        const td = document.createElement("td");
-        td.textContent = idx === 0 ? v : Number(v).toFixed(2);
-        tr.appendChild(td);
-      });
-      tbody.appendChild(tr);
-    }
+        <div class="methodology">
+            <h2>Test Methodology & Documentation (测试任务详解)</h2>
+            <section>
+                <h3>1. 任务定义 (Task Definitions)</h3>
+                <ul>
+                    <li><span class="task-name">OS Baseline (Pure find Scan)</span>: 执行原生 <code>find</code>
+                        扫描，不带一致性等待逻辑。</li>
+                    <li><span class="task-name">OS Integrity (Double Sampling)</span>: 包含首次采样 ->
+                        强制 <strong>{{integrity_interval}}s</strong> 物理等待 -> 二次校验。<strong>当前测量值为无重试的最优性能。</strong></li>
+                    <li><span class="task-name">tree (Materialized)</span>: 通过
+                        <code>/api/fs-meta/v1/tree</code> 访问物化索引查询路径。</li>
+                    <li><span class="task-name">on-demand-force-find (Fresh)</span>: 通过
+                        <code>/api/fs-meta/v1/on-demand-force-find</code> 访问强制新鲜查询路径。</li>
+                </ul>
+            </section>
+        </div>
+    </div>
 
-    document.getElementById("json").textContent = JSON.stringify(data, null, 2);
-  </script>
+    <script>
+        const rawData = /* RESULTS_JSON_DATA */;
+        function format(num, decimals = 2) { return Number(num || 0).toFixed(decimals); }
+        const tableBody = document.querySelector('#metrics-table tbody');
+        const metrics = [
+            { label: 'Avg Latency', key: 'avg' },
+            { label: 'P50 (Median)', key: 'p50' },
+            { label: 'P95 Latency', key: 'p95' },
+            { label: 'P99 Latency', key: 'p99' },
+            { label: 'QPS', key: 'qps', dec: 1 },
+            { label: 'Min', key: 'min' },
+            { label: 'Max', key: 'max' }
+        ];
+        const groups = ['os_baseline', 'os_integrity', 'tree_materialized', 'find_on_demand'];
+        metrics.forEach(m => {
+            const row = document.createElement('tr');
+            row.innerHTML = `<td><strong>${m.label}</strong></td>` +
+                groups.map(g => `<td>${format(rawData[g][m.key], m.dec)}</td>`).join('');
+            tableBody.appendChild(row);
+        });
+
+        const commonLabels = ['OS Baseline', 'OS Integrity*', 'tree', 'on-demand-find'];
+        const getVal = (key) => [rawData.os_baseline[key], rawData.os_integrity[key], rawData.tree_materialized[key], rawData.find_on_demand[key]];
+
+        new Chart(document.getElementById('qpsChart'), {
+            type: 'bar',
+            data: {
+                labels: commonLabels,
+                datasets: [{
+                    label: 'QPS',
+                    data: getVal('qps'),
+                    backgroundColor: ['#3498db', '#e74c3c', '#2ecc71', '#1abc9c'],
+                    maxBarThickness: 40
+                }]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: { y: { type: 'logarithmic', title: { display: true, text: 'Requests/sec (Log Scale)' } } }
+            }
+        });
+
+        new Chart(document.getElementById('latencyChart'), {
+            type: 'bar',
+            data: {
+                labels: commonLabels,
+                datasets: [{
+                    label: 'Avg Latency',
+                    data: getVal('avg'),
+                    backgroundColor: ['#3498db', '#e74c3c', '#2ecc71', '#1abc9c'],
+                    maxBarThickness: 40
+                }]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: { y: { type: 'logarithmic', title: { display: true, text: 'ms (Log Scale)' } } }
+            }
+        });
+
+        const pLabels = ['Min', 'P50', 'P75', 'P90', 'P95', 'P99', 'Max'];
+        const getSeries = (g) => [rawData[g].min, rawData[g].p50, rawData[g].p75, rawData[g].p90, rawData[g].p95, rawData[g].p99, rawData[g].max];
+        new Chart(document.getElementById('lineChart'), {
+            type: 'line',
+            data: {
+                labels: pLabels,
+                datasets: [
+                    { label: 'OS Baseline', data: getSeries('os_baseline'), borderColor: '#3498db', fill: false, tension: 0.1 },
+                    { label: 'OS Integrity*', data: getSeries('os_integrity'), borderColor: '#e74c3c', fill: false, tension: 0.1 },
+                    { label: 'tree', data: getSeries('tree_materialized'), borderColor: '#2ecc71', fill: false, tension: 0.1 },
+                    { label: 'on-demand-find', data: getSeries('find_on_demand'), borderColor: '#1abc9c', fill: false, tension: 0.1 }
+                ]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                scales: { y: { type: 'logarithmic' } },
+                plugins: { legend: { position: 'bottom' } }
+            }
+        });
+    </script>
 </body>
+
 </html>
