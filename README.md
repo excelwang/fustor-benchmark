@@ -1,6 +1,6 @@
-# capanix-benchmark
+# fustor-benchmark
 
-`capanix-benchmark` is a benchmark toolkit for current `fs-meta HTTP v1` surfaces.
+`fustor-benchmark` is a benchmark toolkit for current `fs-meta HTTP v1` surfaces.
 
 ## Scope
 
@@ -14,8 +14,8 @@ It compares:
 ## Quick Start
 
 ```bash
-uv run capanix-benchmark generate capanix-benchmark-run/data --num-dirs 200
-uv run capanix-benchmark query capanix-benchmark-run/data \
+uv run fustor-benchmark generate capanix-benchmark-run/data --num-dirs 200
+uv run fustor-benchmark query capanix-benchmark-run/data \
   --base-url http://127.0.0.1:18102 \
   --username admin --password admin
 ```

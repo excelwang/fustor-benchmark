@@ -1,7 +1,7 @@
 [project]
-name = "capanix-benchmark"
+name = "fustor-benchmark"
 version = "1.0.0"
-description = "Benchmark toolkit for Capanix fs-meta HTTP v1"
+description = "Benchmark toolkit for Fustor fs-meta HTTP v1"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -17,7 +17,7 @@ email = "wanghuajin999@163.com"
 dev = ["pytest>=8.0.0"]
 
 [project.scripts]
-capanix-benchmark = "capanix_benchmark.cli:cli"
+fustor-benchmark = "capanix_benchmark.cli:cli"
 
 [build-system]
 requires = ["setuptools>=61.0"]
