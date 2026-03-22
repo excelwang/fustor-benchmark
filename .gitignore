@@ -5,3 +5,6 @@ dist/
 *.egg-info/
 uv.lock
 capanix-benchmark-run/
+.docker/fsmeta-bin/
+.fsmeta-bench*/
+benchmark-data-generator-runs/

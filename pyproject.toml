@@ -18,6 +18,7 @@ dev = ["pytest>=8.0.0"]
 
 [project.scripts]
 fustor-benchmark = "capanix_benchmark.cli:cli"
+benchmark-data-generator = "capanix_benchmark.benchmark_data_generator:main"
 
 [build-system]
 requires = ["setuptools>=61.0"]
@@ -25,3 +26,6 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+capanix_benchmark = ["query_template.html"]

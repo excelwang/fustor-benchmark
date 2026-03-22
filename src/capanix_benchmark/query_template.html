@@ -273,7 +273,7 @@
             本次测试测得的 <strong>OS Integrity (Double Sampling)</strong> 延迟与吞吐率均为该方案的 <strong><span
                     class="optimistic-flag">理论最优/最乐观情况 (Best-case Scenario)</span></strong>：
             <ul>
-                <li>OS Integrity 路径通过双采样 + 静默窗口校验一致性，具备显著等待成本。</li>
+                <li>OS Integrity 路径通过跨多 NFS 的双轮 discovery + 静默窗口校验一致性，具备显著等待成本。</li>
                 <li><span class="task-name">tree</span> 反映物化索引查询路径；<span class="task-name">on-demand-force-find</span>
                     反映强制新鲜查询路径。</li>
                 <li><strong>结论</strong>：在相同一致性约束下，fs-meta 查询路径可显著降低等待开销并提升吞吐。</li>
@@ -288,10 +288,23 @@
                     <th>OS Baseline</th>
                     <th>OS Integrity <span class="optimistic-flag">*</span></th>
                     <th>tree (materialized)</th>
-                    <th>on-demand-force-find</th>
+                    <th>on-demand-force-find (success path)</th>
                 </tr>
             </thead>
             <tbody></tbody>
+        </table>
+
+        <h2>On-demand Contention</h2>
+        <table>
+            <tbody>
+                <tr><td><strong>Success Path Mode</strong></td><td>{{ondemand_execution_mode}}</td></tr>
+                <tr><td><strong>Success Path Effective Concurrency</strong></td><td>{{ondemand_effective_concurrency}}</td></tr>
+                <tr><td><strong>Success Path Targeted Groups</strong></td><td>{{ondemand_targeted_group_count}}</td></tr>
+                <tr><td><strong>Success Path QPS Semantics</strong></td><td>{{ondemand_qps_semantics}}</td></tr>
+                <tr><td><strong>Successful Samples</strong></td><td>{{ondemand_contention_success_count}}</td></tr>
+                <tr><td><strong>NOT_READY / conflict</strong></td><td>{{ondemand_contention_not_ready_count}}</td></tr>
+                <tr><td><strong>Other Errors</strong></td><td>{{ondemand_contention_error_count}}</td></tr>
+            </tbody>
         </table>
 
         <div class="methodology">
@@ -299,14 +312,15 @@
             <section>
                 <h3>1. 任务定义 (Task Definitions)</h3>
                 <ul>
-                    <li><span class="task-name">OS Baseline (Pure find Scan)</span>: 执行原生 <code>find</code>
-                        扫描，不带一致性等待逻辑。</li>
-                    <li><span class="task-name">OS Integrity (Double Sampling)</span>: 包含首次采样 ->
-                        强制 <strong>{{integrity_interval}}s</strong> 物理等待 -> 二次校验。<strong>当前测量值为无重试的最优性能。</strong></li>
+                    <li><span class="task-name">OS Baseline (Cross-NFS Discovery)</span>: 在所有配置的 NFS 根上执行原生
+                        <code>find</code>，发现 submission 落点后再递归扫描命中的 submission 子树。</li>
+                    <li><span class="task-name">OS Integrity (Double Sweep)</span>: 首次跨 NFS discovery + 元数据快照 ->
+                        强制 <strong>{{integrity_interval}}s</strong> 物理等待 -> 第二次跨 NFS discovery + 元数据快照校验。<strong>当前测量值为无重试的最优性能。</strong></li>
                     <li><span class="task-name">tree (Materialized)</span>: 通过
                         <code>/api/fs-meta/v1/tree</code> 访问物化索引查询路径。</li>
                     <li><span class="task-name">on-demand-force-find (Fresh)</span>: 通过
-                        <code>/api/fs-meta/v1/on-demand-force-find</code> 访问强制新鲜查询路径。</li>
+                        <code>/api/fs-meta/v1/on-demand-force-find</code> 访问强制新鲜查询路径；success path 显式携带
+                        <code>group</code>，每组最多一个 inflight，请求只在组间并发。</li>
                 </ul>
             </section>
         </div>
@@ -325,7 +339,7 @@
             { label: 'Min', key: 'min' },
             { label: 'Max', key: 'max' }
         ];
-        const groups = ['os_baseline', 'os_integrity', 'tree_materialized', 'find_on_demand'];
+        const groups = ['os_baseline', 'os_integrity', 'tree_materialized', 'find_on_demand_success'];
         metrics.forEach(m => {
             const row = document.createElement('tr');
             row.innerHTML = `<td><strong>${m.label}</strong></td>` +
@@ -333,8 +347,8 @@
             tableBody.appendChild(row);
         });
 
-        const commonLabels = ['OS Baseline', 'OS Integrity*', 'tree', 'on-demand-find'];
-        const getVal = (key) => [rawData.os_baseline[key], rawData.os_integrity[key], rawData.tree_materialized[key], rawData.find_on_demand[key]];
+        const commonLabels = ['OS Baseline', 'OS Integrity*', 'tree', 'on-demand-find(success)'];
+        const getVal = (key) => [rawData.os_baseline[key], rawData.os_integrity[key], rawData.tree_materialized[key], rawData.find_on_demand_success[key]];
 
         new Chart(document.getElementById('qpsChart'), {
             type: 'bar',
@@ -382,7 +396,7 @@
                     { label: 'OS Baseline', data: getSeries('os_baseline'), borderColor: '#3498db', fill: false, tension: 0.1 },
                     { label: 'OS Integrity*', data: getSeries('os_integrity'), borderColor: '#e74c3c', fill: false, tension: 0.1 },
                     { label: 'tree', data: getSeries('tree_materialized'), borderColor: '#2ecc71', fill: false, tension: 0.1 },
-                    { label: 'on-demand-find', data: getSeries('find_on_demand'), borderColor: '#1abc9c', fill: false, tension: 0.1 }
+                    { label: 'on-demand-find(success)', data: getSeries('find_on_demand_success'), borderColor: '#1abc9c', fill: false, tension: 0.1 }
                 ]
             },
             options: {

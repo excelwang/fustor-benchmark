@@ -52,6 +52,17 @@ def calculate_stats(latencies, total_time, count):
     }
 
 
+def calculate_outcome_stats(latencies, total_time, attempted_count, not_ready_count, other_error_count):
+    success_count = len(latencies)
+    stats = calculate_stats(latencies, total_time, success_count)
+    stats["attempted_count"] = attempted_count
+    stats["success_count"] = success_count
+    stats["not_ready_count"] = not_ready_count
+    stats["other_error_count"] = other_error_count
+    stats["success_rate"] = (success_count / attempted_count) if attempted_count > 0 else 0
+    return stats
+
+
 def generate_html_report(results, output_path):
     template_path = Path(__file__).parent / "query_template.html"
     with open(template_path, "r", encoding="utf-8") as file:
@@ -59,11 +70,11 @@ def generate_html_report(results, output_path):
 
     integrity_avg = results["os_integrity"]["avg"]
     tree_avg = results["tree_materialized"]["avg"]
-    ondemand_avg = results["find_on_demand"]["avg"]
+    ondemand_avg = results["find_on_demand_success"]["avg"]
 
     integrity_qps = results["os_integrity"]["qps"]
     tree_qps = results["tree_materialized"]["qps"]
-    ondemand_qps = results["find_on_demand"]["qps"]
+    ondemand_qps = results["find_on_demand_success"]["qps"]
 
     tree_gain_latency = (integrity_avg / tree_avg) if tree_avg > 0 else 0
     tree_gain_qps = (tree_qps / integrity_qps) if integrity_qps > 0 else 0
@@ -81,15 +92,27 @@ def generate_html_report(results, output_path):
         "os_avg": f"{results['os_baseline']['avg']:.2f}",
         "os_integrity_avg": f"{results['os_integrity']['avg']:.2f}",
         "tree_avg": f"{results['tree_materialized']['avg']:.2f}",
-        "ondemand_avg": f"{results['find_on_demand']['avg']:.2f}",
+        "ondemand_avg": f"{results['find_on_demand_success']['avg']:.2f}",
         "gain_latency": f"{tree_gain_latency:.1f}x",
         "ondemand_gain_latency": f"{ondemand_gain_latency:.1f}x",
         "os_qps": f"{results['os_baseline']['qps']:.1f}",
         "os_integrity_qps": f"{results['os_integrity']['qps']:.1f}",
         "tree_qps": f"{results['tree_materialized']['qps']:.1f}",
-        "ondemand_qps": f"{results['find_on_demand']['qps']:.1f}",
+        "ondemand_qps": f"{results['find_on_demand_success']['qps']:.1f}",
         "gain_qps": f"{tree_gain_qps:.1f}x",
         "ondemand_gain_qps": f"{ondemand_gain_qps:.1f}x",
+        "ondemand_success_count": str(results["find_on_demand_success"]["success_count"]),
+        "ondemand_execution_mode": str(results["find_on_demand_success"].get("execution_mode", "")),
+        "ondemand_effective_concurrency": str(
+            results["find_on_demand_success"].get("effective_concurrency", "")
+        ),
+        "ondemand_targeted_group_count": str(
+            results["find_on_demand_success"].get("targeted_group_count", "")
+        ),
+        "ondemand_qps_semantics": str(results["find_on_demand_success"].get("qps_semantics", "")),
+        "ondemand_contention_success_count": str(results["find_on_demand_contention"]["success_count"]),
+        "ondemand_contention_not_ready_count": str(results["find_on_demand_contention"]["not_ready_count"]),
+        "ondemand_contention_error_count": str(results["find_on_demand_contention"]["other_error_count"]),
     }
 
     html = template

@@ -1,0 +1,10 @@
+.git
+.pytest_cache
+__pycache__
+*.pyc
+.fsmeta-*
+capanix-benchmark-run
+!capanix-benchmark-run/docker-stage/
+!capanix-benchmark-run/docker-stage/fsmeta-bin/
+!capanix-benchmark-run/docker-stage/fsmeta-bin/fs_meta_api_fixture
+fustor-benchmark
