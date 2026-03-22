@@ -3,6 +3,7 @@ import pytest
 from capanix_benchmark.benchmark_data_generator import (
     HostShard,
     WorkerConfig,
+    build_ssh_command,
     build_scp_command,
     build_worker_command,
     chunk_id,
@@ -75,6 +76,14 @@ def test_build_remote_commands_include_resume_and_paths(tmp_path):
         str(tmp_path / "worker.py"),
         "bench@10.0.82.144:/var/tmp/worker.py",
     ]
+
+    ssh_command = build_ssh_command(
+        "10.0.82.144",
+        ["python3", "-c", "print('a;b')", "/tmp/data path"],
+        ssh_user="bench",
+    )
+    assert ssh_command[0:2] == ["ssh", "bench@10.0.82.144"]
+    assert ssh_command[2] == "python3 -c 'print('\"'\"'a;b'\"'\"')' '/tmp/data path'"
 
 
 def test_worker_run_generates_expected_tree(tmp_path):

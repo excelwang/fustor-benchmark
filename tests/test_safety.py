@@ -2,8 +2,10 @@ import json
 import os
 from unittest.mock import patch
 
+import click
 import pytest
 
+from capanix_benchmark.cli import parse_root_specs
 from capanix_benchmark.generator import DataGenerator
 from capanix_benchmark.reporter import calculate_outcome_stats
 from capanix_benchmark import runner as runner_module
@@ -34,7 +36,7 @@ def test_generator_rejects_unsafe_path(tmp_path):
 
 
 def test_generator_allows_safe_path_and_blocks_non_empty(tmp_path):
-    safe_root = tmp_path / "example-capanix-benchmark-run"
+    safe_root = tmp_path / "capanix-benchmark-run"
     safe_root.mkdir()
     data_dir = safe_root / "data"
 
@@ -51,7 +53,7 @@ def test_generator_allows_safe_path_and_blocks_non_empty(tmp_path):
 
 
 def test_generator_allows_named_roots_with_nested_safe_target(tmp_path):
-    safe_root = tmp_path / "example-capanix-benchmark-run"
+    safe_root = tmp_path / "capanix-benchmark-run"
     safe_root.mkdir()
     data_dir = safe_root / "data"
 
@@ -69,7 +71,7 @@ def test_generator_allows_named_roots_with_nested_safe_target(tmp_path):
 
 
 def test_generator_named_roots_keeps_total_dir_count_semantics(tmp_path):
-    safe_root = tmp_path / "example-capanix-benchmark-run"
+    safe_root = tmp_path / "capanix-benchmark-run"
     safe_root.mkdir()
     data_dir = safe_root / "data"
 
@@ -121,8 +123,8 @@ def test_run_find_sampling_phase_accepts_absolute_target_path(tmp_path):
 
 
 def test_multi_nfs_submission_baseline_task_scans_all_roots(tmp_path):
-    root1 = tmp_path / "nfs1"
-    root2 = tmp_path / "nfs2"
+    root1 = tmp_path / "mnt" / "alpha"
+    root2 = tmp_path / "mnt" / "beta"
     (root1 / "upload" / "submit").mkdir(parents=True)
     (root2 / "upload" / "submit").mkdir(parents=True)
 
@@ -133,7 +135,13 @@ def test_multi_nfs_submission_baseline_task_scans_all_roots(tmp_path):
     (nested_dir / "data_0000.dat").write_text("x", encoding="utf-8")
 
     metrics = run_multi_nfs_submission_baseline_task(
-        {"submission_id": submission_id, "root_dirs": [str(root1), str(root2)]}
+        {
+            "submission_id": submission_id,
+            "root_groups": [
+                {"group_id": "nfs-a", "root_dir": str(root1)},
+                {"group_id": "nfs-b", "root_dir": str(root2)},
+            ],
+        }
     )
 
     assert metrics["roots_scanned"] == 2
@@ -159,7 +167,13 @@ def test_multi_nfs_submission_validation_phase_detects_unstable_snapshot(tmp_pat
     file_path = nested_dir / "data_0000.dat"
     file_path.write_text("x", encoding="utf-8")
 
-    spec = {"submission_id": submission_id, "root_dirs": [str(root1), str(root2)]}
+    spec = {
+        "submission_id": submission_id,
+        "root_groups": [
+            {"group_id": "nfs1", "root_dir": str(root1)},
+            {"group_id": "nfs2", "root_dir": str(root2)},
+        ],
+    }
     _latency, snapshot, _metrics = run_multi_nfs_submission_sampling_phase(spec)
 
     file_path.write_text("xx", encoding="utf-8")
@@ -169,12 +183,36 @@ def test_multi_nfs_submission_validation_phase_detects_unstable_snapshot(tmp_pat
     assert validation["stable"] is False
 
 
+def test_multi_nfs_submission_snapshot_uses_configured_group_ids(tmp_path):
+    root1 = tmp_path / "mounts" / "nfs-a"
+    root2 = tmp_path / "mounts" / "nfs-b"
+    (root1 / "upload" / "submit").mkdir(parents=True)
+    (root2 / "upload" / "submit").mkdir(parents=True)
+
+    submission_id = "submission-789"
+    file_path = root2 / "upload" / "submit" / "s" / "7" / submission_id / "sub_0" / "data_0000.dat"
+    file_path.parent.mkdir(parents=True)
+    file_path.write_text("x", encoding="utf-8")
+
+    _latency, snapshot, _metrics = run_multi_nfs_submission_sampling_phase(
+        {
+            "submission_id": submission_id,
+            "root_groups": [
+                {"group_id": "gsa-east", "root_dir": str(root1)},
+                {"group_id": "gsa-west", "root_dir": str(root2)},
+            ],
+        }
+    )
+
+    assert "gsa-west:sub_0/data_0000.dat" in snapshot["inventory"]
+    assert all(not key.startswith("nfs-b:") for key in snapshot["inventory"])
+
+
 def test_local_mode_requires_start_cmd(tmp_path):
     safe_root = tmp_path / "work-capanix-benchmark-run"
     safe_root.mkdir()
     data_dir = safe_root / "data"
-    data_dir.mkdir()
-    (data_dir / "dummy.txt").write_text("x", encoding="utf-8")
+    (data_dir / "upload" / "submit" / "a").mkdir(parents=True)
 
     runner = BenchmarkRunner(
         run_dir=str(safe_root),
@@ -239,6 +277,87 @@ def test_to_api_path_named_roots_strips_root_id_prefix(tmp_path):
     )
 
     assert runner._to_api_path(str(nested), str(data_dir / "nfs1")) == "/upload/submit"
+
+
+def test_parse_root_specs_returns_absolute_paths(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    spec = parse_root_specs(f"nfs-a={tmp_path / 'mnt-a'},nfs-b=relative-nfs-b")
+
+    assert spec[0] == ("nfs-a", str((tmp_path / "mnt-a").resolve()))
+    assert spec[1] == ("nfs-b", str((tmp_path / "relative-nfs-b").resolve()))
+
+
+def test_parse_root_specs_rejects_duplicate_group_id(tmp_path):
+    with pytest.raises(click.BadParameter, match="duplicate group_id"):
+        parse_root_specs(f"nfs-a={tmp_path / 'mnt-a'},nfs-a={tmp_path / 'mnt-b'}")
+
+
+def test_root_group_dirs_support_explicit_roots(tmp_path):
+    root1 = tmp_path / "mounts" / "srv-144"
+    root2 = tmp_path / "mounts" / "srv-145"
+    root1.mkdir(parents=True)
+    root2.mkdir(parents=True)
+
+    runner = BenchmarkRunner(
+        run_dir=str(tmp_path),
+        target_dir=str(tmp_path / "placeholder"),
+        base_url="http://127.0.0.1:18102",
+        token="token",
+        root_layout="explicit-roots",
+        root_specs=[("nfs1", str(root1)), ("nfs2", str(root2))],
+    )
+
+    assert runner.root_ids == ["nfs1", "nfs2"]
+    assert runner._root_group_dirs() == [("nfs1", str(root1)), ("nfs2", str(root2))]
+
+
+def test_to_api_path_explicit_roots_uses_mount_relative_query_paths(tmp_path):
+    root1 = tmp_path / "mounts" / "srv-144"
+    nested = root1 / "upload" / "submit" / "a" / "b"
+    nested.mkdir(parents=True)
+
+    runner = BenchmarkRunner(
+        run_dir=str(tmp_path),
+        target_dir=str(tmp_path / "placeholder"),
+        base_url="http://127.0.0.1:18102",
+        token="token",
+        root_layout="explicit-roots",
+        root_specs=[("nfs1", str(root1))],
+    )
+
+    assert runner._to_api_path(str(nested), str(root1)) == "/upload/submit/a/b"
+
+
+def test_submission_baseline_spec_includes_explicit_root_groups(tmp_path):
+    root1 = tmp_path / "mounts" / "srv-144"
+    root2 = tmp_path / "mounts" / "srv-145"
+    target_dir = root1 / "upload" / "submit" / "a" / "b" / "submission-1"
+    target_dir.mkdir(parents=True)
+
+    runner = BenchmarkRunner(
+        run_dir=str(tmp_path),
+        target_dir=str(tmp_path / "placeholder"),
+        base_url="http://127.0.0.1:18102",
+        token="token",
+        root_layout="explicit-roots",
+        root_specs=[("nfs1", str(root1)), ("nfs2", str(root2))],
+    )
+
+    spec = runner._submission_baseline_spec(
+        BenchmarkTarget(
+            local_path=str(target_dir),
+            api_path="/upload/submit/a/b/submission-1",
+            group_id="nfs1",
+        )
+    )
+
+    assert spec == {
+        "submission_id": "submission-1",
+        "root_groups": [
+            {"group_id": "nfs1", "root_dir": str(root1)},
+            {"group_id": "nfs2", "root_dir": str(root2)},
+        ],
+    }
 
 
 def test_build_fs_meta_request_params_uses_current_contract_axes():

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import argparse
 import concurrent.futures
 import datetime as dt
@@ -5,6 +7,7 @@ import hashlib
 import json
 import os
 import pathlib
+import shlex
 import shutil
 import subprocess
 import sys
@@ -423,6 +426,10 @@ def ssh_target(host: str, ssh_user: str | None = None) -> str:
     return host
 
 
+def build_ssh_command(host: str, remote_args: list[str], ssh_user: str | None = None) -> list[str]:
+    return ["ssh", ssh_target(host, ssh_user), shlex.join(remote_args)]
+
+
 def build_scp_command(local_path: pathlib.Path, host: str, remote_path: str, ssh_user: str | None = None) -> list[str]:
     return ["scp", str(local_path), f"{ssh_target(host, ssh_user)}:{remote_path}"]
 
@@ -476,18 +483,20 @@ def run_subprocess(command: list[str], check: bool = True) -> subprocess.Complet
 
 
 def fetch_remote_json(host: str, remote_path: str, ssh_user: str | None = None) -> dict[str, Any] | None:
-    command = [
-        "ssh",
-        ssh_target(host, ssh_user),
-        "python3",
-        "-c",
-        (
-            "import pathlib,sys;"
-            "path=pathlib.Path(sys.argv[1]);"
-            "print(path.read_text(encoding='utf-8') if path.exists() else '')"
-        ),
-        remote_path,
-    ]
+    command = build_ssh_command(
+        host,
+        [
+            "python3",
+            "-c",
+            (
+                "import pathlib,sys;"
+                "path=pathlib.Path(sys.argv[1]);"
+                "print(path.read_text(encoding='utf-8') if path.exists() else '')"
+            ),
+            remote_path,
+        ],
+        ssh_user=ssh_user,
+    )
     result = run_subprocess(command, check=True)
     content = result.stdout.strip()
     if not content:
@@ -520,7 +529,11 @@ def remote_precheck(
         "print(json.dumps(payload))"
     )
     result = run_subprocess(
-        ["ssh", ssh_target(host, ssh_user), "python3", "-c", script, base_dir, "1" if resume else "0"],
+        build_ssh_command(
+            host,
+            ["python3", "-c", script, base_dir, "1" if resume else "0"],
+            ssh_user=ssh_user,
+        ),
         check=True,
     )
     return json.loads(result.stdout)
@@ -592,14 +605,16 @@ def shard_map(shards: list[HostShard]) -> dict[str, dict[str, Any]]:
 def sync_worker_script(host: str, remote_state_dir: str, ssh_user: str | None = None) -> str:
     remote_script_path = f"{remote_state_dir}/benchmark_data_generator.py"
     run_subprocess(
-        [
-            "ssh",
-            ssh_target(host, ssh_user),
-            "python3",
-            "-c",
-            "import pathlib,sys; pathlib.Path(sys.argv[1]).mkdir(parents=True, exist_ok=True)",
-            remote_state_dir,
-        ],
+        build_ssh_command(
+            host,
+            [
+                "python3",
+                "-c",
+                "import pathlib,sys; pathlib.Path(sys.argv[1]).mkdir(parents=True, exist_ok=True)",
+                remote_state_dir,
+            ],
+            ssh_user=ssh_user,
+        ),
         check=True,
     )
     run_subprocess(build_scp_command(pathlib.Path(__file__).resolve(), host, remote_script_path, ssh_user), check=True)
@@ -822,7 +837,7 @@ def run_cluster(args: argparse.Namespace) -> int:
             resume=args.resume,
         )
         worker_command = build_worker_command(config, remote_script_path)
-        ssh_command = ["ssh", ssh_target(host, args.ssh_user), *worker_command]
+        ssh_command = build_ssh_command(host, worker_command, ssh_user=args.ssh_user)
         stdout_handle = (run_dir / "logs" / f"{host}.stdout.log").open("a", encoding="utf-8")
         stderr_handle = (run_dir / "logs" / f"{host}.stderr.log").open("a", encoding="utf-8")
         log_handles.extend([stdout_handle, stderr_handle])

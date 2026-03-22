@@ -282,6 +282,7 @@ class BenchmarkRunner:
         ready_timeout=120.0,
         root_layout="single-root",
         root_ids=None,
+        root_specs=None,
     ):
         self.run_dir = os.path.abspath(run_dir)
         self.data_dir = os.path.abspath(target_dir)
@@ -294,7 +295,14 @@ class BenchmarkRunner:
         self.ready_timeout = ready_timeout
         self.created_query_api_key_id = None
         self.root_layout = root_layout
-        self.root_ids = root_ids or ["nfs1", "nfs2", "nfs3"]
+        self.root_specs = [
+            (str(group_id), os.path.abspath(root_dir))
+            for group_id, root_dir in (root_specs or [])
+        ]
+        if self.root_layout == "explicit-roots":
+            self.root_ids = [group_id for group_id, _root_dir in self.root_specs]
+        else:
+            self.root_ids = root_ids or ["nfs1", "nfs2", "nfs3"]
 
         self.client = FsMetaClient(base_url=base_url, query_api_key=query_api_key, token=token)
         self.username = username
@@ -321,6 +329,8 @@ class BenchmarkRunner:
         return targets
 
     def _root_group_dirs(self):
+        if self.root_layout == "explicit-roots":
+            return list(self.root_specs)
         if self.root_layout == "named-roots":
             return [
                 (root_id, os.path.join(self.data_dir, root_id))
@@ -328,6 +338,16 @@ class BenchmarkRunner:
             ]
         default_group = self.root_ids[0] if self.root_ids else "bench-root"
         return [(default_group, self.data_dir)]
+
+    def _has_benchmark_data(self):
+        for _group_id, root_dir in self._root_group_dirs():
+            search_root = os.path.join(root_dir, "upload", "submit")
+            if not os.path.isdir(search_root):
+                continue
+            with os.scandir(search_root) as entries:
+                if any(True for _entry in entries):
+                    return True
+        return False
 
     def _to_api_path(self, path_value: str, group_root: str | None = None):
         apath = os.path.abspath(path_value)
@@ -377,7 +397,10 @@ class BenchmarkRunner:
     def _submission_baseline_spec(self, target: BenchmarkTarget):
         return {
             "submission_id": self._submission_id_for_target(target),
-            "root_dirs": [root_dir for _, root_dir in self._root_group_dirs()],
+            "root_groups": [
+                {"group_id": group_id, "root_dir": root_dir}
+                for group_id, root_dir in self._root_group_dirs()
+            ],
         }
 
     def _baseline_metric_average(self, metrics, key, divisor):
@@ -714,11 +737,18 @@ class BenchmarkRunner:
         return total_files, total_dirs
 
     def run(self, concurrency=20, reqs=200, target_depth=5, integrity_interval=60.0):
-        data_exists = os.path.exists(self.data_dir) and len(os.listdir(self.data_dir)) > 0
-        if not data_exists:
+        if not self._has_benchmark_data():
             raise RuntimeError("Benchmark data missing")
 
-        click.echo(f"Using data directory: {self.data_dir}")
+        if self.root_layout == "explicit-roots":
+            click.echo(
+                "Using explicit benchmark roots: "
+                + ", ".join(
+                    f"{group_id}={root_dir}" for group_id, root_dir in self._root_group_dirs()
+                )
+            )
+        else:
+            click.echo(f"Using data directory: {self.data_dir}")
 
         try:
             if self.mode == "local":
@@ -749,6 +779,10 @@ class BenchmarkRunner:
                     "total_files_in_scope": total_files,
                     "total_directories_in_scope": total_dirs,
                     "source_path": self.data_dir,
+                    "source_roots": [
+                        {"group_id": group_id, "root_dir": root_dir}
+                        for group_id, root_dir in self._root_group_dirs()
+                    ],
                     "api_endpoint": self.client.base_url,
                     "integrity_interval": integrity_interval,
                     "baseline_model": "multi_nfs_submission_discovery",

@@ -9,13 +9,45 @@ from .runner import BenchmarkRunner
 DEFAULT_RUN_DIR = "capanix-benchmark-run"
 
 
+def parse_root_specs(root_specs_value):
+    if not root_specs_value:
+        return []
+
+    root_specs = []
+    seen_ids = set()
+    for item in root_specs_value.split(","):
+        spec = item.strip()
+        if not spec:
+            continue
+        if "=" not in spec:
+            raise click.BadParameter(
+                f"invalid root spec '{spec}'; expected <group_id>=<absolute_or_relative_path>"
+            )
+        group_id, raw_path = spec.split("=", 1)
+        group_id = group_id.strip()
+        root_path = raw_path.strip()
+        if not group_id or not root_path:
+            raise click.BadParameter(
+                f"invalid root spec '{spec}'; both group_id and path are required"
+            )
+        if group_id in seen_ids:
+            raise click.BadParameter(f"duplicate group_id in --root-specs: {group_id}")
+        seen_ids.add(group_id)
+        root_specs.append((group_id, os.path.abspath(root_path)))
+
+    if not root_specs:
+        raise click.BadParameter("--root-specs did not contain any valid entries")
+
+    return root_specs
+
+
 @click.group()
 def cli():
     """Capanix benchmark toolkit."""
 
 
 @cli.command()
-@click.argument("target_dir", type=click.Path(exists=True))
+@click.argument("target_dir", type=click.Path(exists=False))
 @click.option("-c", "--concurrency", default=20, show_default=True, help="Number of concurrent workers.")
 @click.option("-n", "--num-requests", default=200, show_default=True, help="Total number of requests.")
 @click.option("-d", "--target-depth", default=5, show_default=True, help="Relative depth for target path sampling.")
@@ -63,7 +95,7 @@ def cli():
 @click.option("--ready-timeout", default=120.0, show_default=True, help="Seconds to wait for service readiness.")
 @click.option(
     "--root-layout",
-    type=click.Choice(["single-root", "named-roots"]),
+    type=click.Choice(["single-root", "named-roots", "explicit-roots"]),
     default="single-root",
     show_default=True,
     help="How TARGET_DIR is interpreted for benchmark root/group layout.",
@@ -73,6 +105,11 @@ def cli():
     default="nfs1,nfs2,nfs3",
     show_default=True,
     help="Comma-separated root ids used when --root-layout=named-roots.",
+)
+@click.option(
+    "--root-specs",
+    default=None,
+    help="Comma-separated explicit root specs in the form group_id=/abs/path, used when --root-layout=explicit-roots.",
 )
 def query(
     target_dir,
@@ -97,11 +134,17 @@ def query(
     ready_timeout,
     root_layout,
     root_ids,
+    root_specs,
 ):
     """Run query/find benchmark against fs-meta HTTP v1."""
     run_dir = os.path.abspath(DEFAULT_RUN_DIR)
     effective_query_api_key = query_api_key or legacy_query_api_key
     effective_stats_group = stats_group or legacy_stats_group
+    parsed_root_specs = parse_root_specs(root_specs)
+    if root_layout == "explicit-roots" and not parsed_root_specs:
+        raise click.BadParameter("--root-specs is required when --root-layout=explicit-roots")
+    if root_layout != "explicit-roots" and parsed_root_specs:
+        raise click.BadParameter("--root-specs can only be used when --root-layout=explicit-roots")
     runner = BenchmarkRunner(
         run_dir=run_dir,
         target_dir=target_dir,
@@ -120,6 +163,7 @@ def query(
         ready_timeout=ready_timeout,
         root_layout=root_layout,
         root_ids=[item.strip() for item in root_ids.split(",") if item.strip()],
+        root_specs=parsed_root_specs,
     )
 
     runner.run(

@@ -17,16 +17,43 @@ def _run_find_command(cmd):
     return subprocess.run(cmd, capture_output=True, text=True, check=False)
 
 
-def _search_submission_dirs(root_dirs, submission_id):
+def _normalize_root_groups(spec):
+    root_groups = spec.get("root_groups")
+    if root_groups:
+        normalized = []
+        for item in root_groups:
+            if isinstance(item, dict):
+                group_id = item.get("group_id")
+                root_dir = item.get("root_dir")
+            else:
+                group_id, root_dir = item
+            if not group_id or not root_dir:
+                continue
+            normalized.append({"group_id": str(group_id), "root_dir": str(root_dir)})
+        return normalized
+
+    return [
+        {
+            "group_id": os.path.basename(os.path.normpath(root_dir)),
+            "root_dir": str(root_dir),
+        }
+        for root_dir in spec.get("root_dirs", [])
+        if root_dir
+    ]
+
+
+def _search_submission_dirs(root_groups, submission_id):
     discovered = []
     metrics = {
-        "roots_scanned": len(root_dirs),
+        "roots_scanned": len(root_groups),
         "roots_with_search_path": 0,
         "discovery_find_calls": 0,
         "discovery_match_lines": 0,
     }
 
-    for root_dir in root_dirs:
+    for root_group in root_groups:
+        root_label = root_group["group_id"]
+        root_dir = root_group["root_dir"]
         search_root = os.path.join(root_dir, "upload", "submit")
         if not os.path.isdir(search_root):
             continue
@@ -37,7 +64,6 @@ def _search_submission_dirs(root_dirs, submission_id):
         )
         matches = [line.strip() for line in result.stdout.splitlines() if line.strip()]
         metrics["discovery_match_lines"] += len(matches)
-        root_label = os.path.basename(os.path.normpath(root_dir))
         for match in matches:
             discovered.append((root_label, match))
 
@@ -46,8 +72,8 @@ def _search_submission_dirs(root_dirs, submission_id):
 
 def _collect_submission_snapshot(spec):
     submission_id = spec["submission_id"]
-    root_dirs = spec["root_dirs"]
-    discovered, discovery_metrics = _search_submission_dirs(root_dirs, submission_id)
+    root_groups = _normalize_root_groups(spec)
+    discovered, discovery_metrics = _search_submission_dirs(root_groups, submission_id)
 
     inventory = {}
     metrics = {
