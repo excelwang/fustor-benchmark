@@ -12,6 +12,11 @@
 - `os_baseline`
 - `os_integrity`
 
+如果需要把 baseline 跑在真实 NFS 相互挂载环境上，而不是本地目录模拟，请同时参考：
+
+- [NFS_MUTUAL_MOUNT_PLAN.md](/root/repo/fustor-benchmark/NFS_MUTUAL_MOUNT_PLAN.md)
+- [SCALE_BREAKPOINT_EVALUATION.md](/root/repo/fustor-benchmark/SCALE_BREAKPOINT_EVALUATION.md)
+
 它们的目标不是替代 fs-meta 路径，而是给 GSA 汇交流程提供一个可以复现的、面向业务动作的“传统做法”参照系。
 
 ## 1. 业务背景

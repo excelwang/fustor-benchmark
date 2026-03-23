@@ -4,6 +4,7 @@ import click
 
 from .generator import DataGenerator
 from .runner import BenchmarkRunner
+from .scale_breakpoint import analyze_scale_breakpoint, write_analysis_outputs
 
 
 DEFAULT_RUN_DIR = "capanix-benchmark-run"
@@ -207,6 +208,132 @@ def generate(target_dir, num_dirs, num_subdirs, files_per_subdir, root_layout, r
         root_layout=root_layout,
         root_ids=[item.strip() for item in root_ids.split(",") if item.strip()],
     )
+
+
+@cli.command("scale-breakpoint")
+@click.argument("result_paths", nargs=-1, type=click.Path(exists=True, dir_okay=False))
+@click.option("--anchor-files", default=500_000_000, show_default=True, type=click.IntRange(1))
+@click.option(
+    "--latency-regression-tolerance",
+    default=0.10,
+    show_default=True,
+    type=click.FloatRange(0.0, 1.0),
+    help="Allowed p95 slowdown versus baseline before a scale point fails not-worse judgement.",
+)
+@click.option(
+    "--qps-regression-tolerance",
+    default=0.10,
+    show_default=True,
+    type=click.FloatRange(0.0, 1.0),
+    help="Allowed QPS drop versus baseline before a scale point fails not-worse judgement.",
+)
+@click.option(
+    "--min-success-rate",
+    default=0.99,
+    show_default=True,
+    type=click.FloatRange(0.0, 1.0),
+    help="Minimum on-demand success rate required for not-worse judgement.",
+)
+@click.option(
+    "--max-contention-not-ready-rate",
+    default=0.05,
+    show_default=True,
+    type=click.FloatRange(0.0, 1.0),
+    help="Maximum acceptable on-demand contention NOT_READY rate for not-worse judgement.",
+)
+@click.option(
+    "--min-integrity-stable-rate",
+    default=0.95,
+    show_default=True,
+    type=click.FloatRange(0.0, 1.0),
+    help="Minimum OS integrity stable rate required before claiming the scale point is conclusion-ready.",
+)
+@click.option(
+    "--breakpoint-latency-ratio",
+    default=1.25,
+    show_default=True,
+    type=click.FloatRange(0.0, min_open=True),
+    help="Breakpoint signal when p95 ratio rises above this value after the anchor scale.",
+)
+@click.option(
+    "--breakpoint-qps-ratio",
+    default=0.80,
+    show_default=True,
+    type=click.FloatRange(0.0, 1.0),
+    help="Breakpoint signal when QPS ratio drops below this value after the anchor scale.",
+)
+@click.option(
+    "--breakpoint-not-ready-rate",
+    default=0.15,
+    show_default=True,
+    type=click.FloatRange(0.0, 1.0),
+    help="Breakpoint signal when contention NOT_READY rate rises above this value after the anchor scale.",
+)
+@click.option(
+    "--consecutive-points",
+    default=2,
+    show_default=True,
+    type=click.IntRange(1),
+    help="Number of consecutive scale points required to confirm a breakpoint.",
+)
+@click.option("--output-json", default=None, help="Optional output path for structured breakpoint analysis JSON.")
+@click.option("--output-md", default=None, help="Optional output path for markdown summary.")
+def scale_breakpoint(
+    result_paths,
+    anchor_files,
+    latency_regression_tolerance,
+    qps_regression_tolerance,
+    min_success_rate,
+    max_contention_not_ready_rate,
+    min_integrity_stable_rate,
+    breakpoint_latency_ratio,
+    breakpoint_qps_ratio,
+    breakpoint_not_ready_rate,
+    consecutive_points,
+    output_json,
+    output_md,
+):
+    """Evaluate scale breakpoint conclusions across multiple query-find.json results."""
+    if not result_paths:
+        raise click.UsageError("at least one query-find.json result path is required")
+
+    thresholds = {
+        "anchor_files": anchor_files,
+        "latency_regression_tolerance": latency_regression_tolerance,
+        "qps_regression_tolerance": qps_regression_tolerance,
+        "min_success_rate": min_success_rate,
+        "max_contention_not_ready_rate": max_contention_not_ready_rate,
+        "min_integrity_stable_rate": min_integrity_stable_rate,
+        "breakpoint_latency_ratio": breakpoint_latency_ratio,
+        "breakpoint_qps_ratio": breakpoint_qps_ratio,
+        "breakpoint_not_ready_rate": breakpoint_not_ready_rate,
+        "consecutive_points": consecutive_points,
+    }
+
+    analysis = analyze_scale_breakpoint(result_paths, thresholds)
+    markdown = write_analysis_outputs(
+        analysis,
+        output_json=output_json,
+        output_md=output_md,
+    )
+
+    anchor = analysis["anchor_verdict"]
+    breakpoint = analysis["breakpoint_verdict"]
+
+    click.echo(
+        "Scale breakpoint evaluation: "
+        f"anchor_present={anchor['anchor_present']} "
+        f"anchor_not_worse={anchor['anchor_scale_not_worse_than_baseline']} "
+        f"anchor_ready={anchor['anchor_scale_conclusion_ready']} "
+        f"breakpoint_detected={breakpoint['breakpoint_detected']}"
+    )
+    if output_json:
+        click.echo(click.style(f"Analysis JSON saved to: {os.path.abspath(output_json)}", fg="cyan"))
+    if output_md:
+        click.echo(click.style(f"Analysis markdown saved to: {os.path.abspath(output_md)}", fg="green"))
+    if not output_md:
+        click.echo()
+        click.echo(markdown)
 
 
 if __name__ == "__main__":

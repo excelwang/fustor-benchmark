@@ -5,6 +5,8 @@
 Dedicated baseline workload documentation:
 
 - [BASELINE_TESTING.md](/root/repo/fustor-benchmark/BASELINE_TESTING.md)
+- [NFS_MUTUAL_MOUNT_PLAN.md](/root/repo/fustor-benchmark/NFS_MUTUAL_MOUNT_PLAN.md)
+- [SCALE_BREAKPOINT_EVALUATION.md](/root/repo/fustor-benchmark/SCALE_BREAKPOINT_EVALUATION.md)
 
 ## Scope
 
@@ -124,6 +126,16 @@ uv run fustor-benchmark generate capanix-benchmark-run/data --num-dirs 200
 uv run fustor-benchmark query capanix-benchmark-run/data \
   --base-url http://127.0.0.1:18102 \
   --username admin --password admin
+
+uv run fustor-benchmark scale-breakpoint \
+  run-100m/results/query-find.json \
+  run-300m/results/query-find.json \
+  run-500m/results/query-find.json \
+  run-700m/results/query-find.json \
+  run-1b/results/query-find.json \
+  --anchor-files 500000000 \
+  --output-json capanix-benchmark-run/results/scale-breakpoint.json \
+  --output-md capanix-benchmark-run/results/scale-breakpoint.md
 ```
 
 The benchmark now follows the current fs-meta product API:
