@@ -35,6 +35,14 @@ def test_plan_host_shards_evenly_distributes_remainder():
     ]
 
 
+def test_plan_host_shards_supports_start_offset():
+    shards = plan_host_shards(["h1", "h2"], total_submissions=5, start_submission_offset=10)
+    assert shards == [
+        HostShard(host="h1", start_submission=10, end_submission=13),
+        HostShard(host="h2", start_submission=13, end_submission=15),
+    ]
+
+
 def test_deterministic_uuid_for_index_is_stable_and_distributed():
     first = deterministic_uuid_for_index(0)
     second = deterministic_uuid_for_index(0)
@@ -58,6 +66,7 @@ def test_build_remote_commands_include_resume_and_paths(tmp_path):
         chunk_size_submissions=1000,
         workers=16,
         uuid_namespace_seed="seed",
+        append=True,
         resume=True,
     )
 
@@ -68,6 +77,7 @@ def test_build_remote_commands_include_resume_and_paths(tmp_path):
         "worker-run",
         "--run-id",
     ]
+    assert "--append" in worker_command
     assert "--resume" in worker_command
 
     scp_command = build_scp_command(tmp_path / "worker.py", "10.0.82.144", "/var/tmp/worker.py", ssh_user="bench")
@@ -102,6 +112,7 @@ def test_worker_run_generates_expected_tree(tmp_path):
         chunk_size_submissions=1,
         workers=2,
         uuid_namespace_seed="seed",
+        append=False,
         resume=False,
     )
 
@@ -135,6 +146,7 @@ def test_worker_run_resume_skips_completed_chunks(tmp_path):
         chunk_size_submissions=1,
         workers=1,
         uuid_namespace_seed="seed",
+        append=False,
         resume=False,
     )
     run_worker(initial_config)
@@ -175,6 +187,7 @@ def test_worker_run_resume_cleans_incomplete_chunk(tmp_path):
         chunk_size_submissions=1,
         workers=1,
         uuid_namespace_seed="seed",
+        append=False,
         resume=True,
     )
 
@@ -184,3 +197,35 @@ def test_worker_run_resume_cleans_incomplete_chunk(tmp_path):
     assert manifest["state"] == "completed"
     assert len(files) == 2
     assert all(path.stat().st_size == 4 for path in files)
+
+
+def test_worker_run_append_allows_non_empty_base_dir(tmp_path):
+    base_dir = tmp_path / "data"
+    existing_path = base_dir / "upload" / "submit" / "existing-marker"
+    existing_path.mkdir(parents=True)
+    state_dir = tmp_path / "state-append"
+
+    config = WorkerConfig(
+        run_id="run-append",
+        host="host-1",
+        remote_base_dir=str(base_dir),
+        remote_state_dir=str(state_dir),
+        start_submission=2,
+        end_submission=4,
+        num_subdirs=1,
+        files_per_subdir=2,
+        file_size_bytes=4,
+        chunk_size_submissions=1,
+        workers=1,
+        uuid_namespace_seed="seed",
+        append=True,
+        resume=False,
+    )
+
+    manifest = run_worker(config)
+
+    assert manifest["state"] == "completed"
+    assert manifest["created_files"] == 4
+    assert existing_path.is_dir()
+    assert submission_dir_for_index(base_dir, 2, "seed").is_dir()
+    assert submission_dir_for_index(base_dir, 3, "seed").is_dir()

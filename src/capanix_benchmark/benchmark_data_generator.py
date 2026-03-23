@@ -63,6 +63,7 @@ class WorkerConfig:
     chunk_size_submissions: int
     workers: int
     uuid_namespace_seed: str
+    append: bool
     resume: bool
 
     @property
@@ -128,12 +129,12 @@ def parse_hosts(hosts_value: str) -> list[str]:
     return hosts
 
 
-def plan_host_shards(hosts: list[str], total_submissions: int) -> list[HostShard]:
+def plan_host_shards(hosts: list[str], total_submissions: int, start_submission_offset: int = 0) -> list[HostShard]:
     host_count = len(hosts)
     base = total_submissions // host_count
     remainder = total_submissions % host_count
     shards: list[HostShard] = []
-    cursor = 0
+    cursor = start_submission_offset
     for index, host in enumerate(hosts):
         shard_size = base + (1 if index < remainder else 0)
         next_cursor = cursor + shard_size
@@ -285,6 +286,7 @@ def write_worker_manifest(
             "num_subdirs": config.num_subdirs,
             "files_per_subdir": config.files_per_subdir,
             "uuid_namespace_seed": config.uuid_namespace_seed,
+            "append": config.append,
             "completed_chunks": completed_chunks,
             "completed_chunk_count": len(completed_chunks),
             "created_files": created_files,
@@ -311,7 +313,7 @@ def run_worker(config: WorkerConfig) -> dict[str, Any]:
             raise RuntimeError(f"resume requested but remote manifest missing: {manifest_path}")
         completed_chunks, created_files, created_dirs = aggregate_chunk_markers(state_dir)
     else:
-        if base_dir.exists() and any(base_dir.iterdir()):
+        if not config.append and base_dir.exists() and any(base_dir.iterdir()):
             raise RuntimeError(f"target directory must be empty for a fresh run: {base_dir}")
         base_dir.mkdir(parents=True, exist_ok=True)
         completed_chunks, created_files, created_dirs = [], 0, 0
@@ -468,6 +470,8 @@ def build_worker_command(
         "--uuid-namespace-seed",
         config.uuid_namespace_seed,
     ]
+    if config.append:
+        command.append("--append")
     if config.resume:
         command.append("--resume")
     return command
@@ -545,6 +549,7 @@ def validate_precheck(
     expected_submissions: int,
     num_subdirs: int,
     file_size_bytes: int,
+    append: bool,
     resume: bool,
 ) -> None:
     block_size = int(precheck["block_size"])
@@ -562,7 +567,7 @@ def validate_precheck(
     free_inodes = int(precheck["free_inodes"])
     existing_entries = list(precheck.get("existing_entries", []))
 
-    if not resume and existing_entries:
+    if not resume and not append and existing_entries:
         raise RuntimeError(
             f"fresh run requires empty target directory on {precheck['base_dir']}, found entries: {existing_entries[:10]}"
         )
@@ -687,6 +692,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     cluster_parser.add_argument("--run-id", default=None)
     cluster_parser.add_argument("--resume", action="store_true")
     cluster_parser.add_argument("--total-files", type=int, default=DEFAULT_TOTAL_FILES)
+    cluster_parser.add_argument("--start-submission-offset", type=int, default=0)
     cluster_parser.add_argument("--num-subdirs", type=int, default=DEFAULT_NUM_SUBDIRS)
     cluster_parser.add_argument("--files-per-subdir", type=int, default=DEFAULT_FILES_PER_SUBDIR)
     cluster_parser.add_argument("--file-size-bytes", type=int, default=DEFAULT_FILE_SIZE_BYTES)
@@ -694,6 +700,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     cluster_parser.add_argument("--workers-per-host", type=int, default=0)
     cluster_parser.add_argument("--uuid-namespace-seed", default=DEFAULT_UUID_NAMESPACE_SEED)
     cluster_parser.add_argument("--poll-interval-seconds", type=float, default=DEFAULT_POLL_INTERVAL_SECONDS)
+    cluster_parser.add_argument("--append", action="store_true")
 
     worker_parser = subparsers.add_parser("worker-run", help="Execute a local shard on a remote host.")
     worker_parser.add_argument("--run-id", required=True)
@@ -708,6 +715,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     worker_parser.add_argument("--chunk-size-submissions", type=int, default=DEFAULT_CHUNK_SIZE_SUBMISSIONS)
     worker_parser.add_argument("--workers", type=int, default=0)
     worker_parser.add_argument("--uuid-namespace-seed", default=DEFAULT_UUID_NAMESPACE_SEED)
+    worker_parser.add_argument("--append", action="store_true")
     worker_parser.add_argument("--resume", action="store_true")
 
     return parser
@@ -730,14 +738,17 @@ def worker_config_from_args(args: argparse.Namespace) -> WorkerConfig:
         chunk_size_submissions=args.chunk_size_submissions,
         workers=workers,
         uuid_namespace_seed=args.uuid_namespace_seed,
+        append=args.append,
         resume=args.resume,
     )
 
 
 def run_cluster(args: argparse.Namespace) -> int:
     hosts = parse_hosts(args.hosts)
+    if args.start_submission_offset < 0:
+        raise ValueError("start_submission_offset must be non-negative")
     total_submissions = submission_count_for_files(args.total_files, args.num_subdirs, args.files_per_subdir)
-    shards = plan_host_shards(hosts, total_submissions)
+    shards = plan_host_shards(hosts, total_submissions, start_submission_offset=args.start_submission_offset)
     workers_per_host = args.workers_per_host or min(32, (os.cpu_count() or 1))
     run_id = args.run_id or default_run_id()
     run_dir = pathlib.Path(args.state_root) / run_id
@@ -752,11 +763,13 @@ def run_cluster(args: argparse.Namespace) -> int:
             "remote_base_dir": args.remote_base_dir,
             "remote_state_root": args.remote_state_root,
             "total_files": args.total_files,
+            "start_submission_offset": args.start_submission_offset,
             "num_subdirs": args.num_subdirs,
             "files_per_subdir": args.files_per_subdir,
             "file_size_bytes": args.file_size_bytes,
             "chunk_size_submissions": args.chunk_size_submissions,
             "uuid_namespace_seed": args.uuid_namespace_seed,
+            "append": args.append,
         }
         for field_name, expected_value in immutable_fields.items():
             if existing_manifest.get(field_name) != expected_value:
@@ -780,12 +793,14 @@ def run_cluster(args: argparse.Namespace) -> int:
             "local_state_root": str(pathlib.Path(args.state_root).resolve()),
             "total_files": args.total_files,
             "total_submissions": total_submissions,
+            "start_submission_offset": args.start_submission_offset,
             "num_subdirs": args.num_subdirs,
             "files_per_subdir": args.files_per_subdir,
             "file_size_bytes": args.file_size_bytes,
             "chunk_size_submissions": args.chunk_size_submissions,
             "workers_per_host": workers_per_host,
             "uuid_namespace_seed": args.uuid_namespace_seed,
+            "append": args.append,
             "resume": False,
             "host_shards": shard_map(shards),
             "host_status": {},
@@ -795,6 +810,7 @@ def run_cluster(args: argparse.Namespace) -> int:
 
     print(f"Run ID: {run_id}")
     print(f"Hosts: {', '.join(hosts)}")
+    print(f"Start submission offset: {args.start_submission_offset:,}")
     print(f"Total submissions: {total_submissions:,}")
     print(f"Files per host: {shards[0].submission_count * files_per_submission(args.num_subdirs, args.files_per_subdir):,}")
 
@@ -808,6 +824,7 @@ def run_cluster(args: argparse.Namespace) -> int:
             expected_submissions=shard.submission_count,
             num_subdirs=args.num_subdirs,
             file_size_bytes=args.file_size_bytes,
+            append=args.append,
             resume=args.resume,
         )
         manifest_payload.setdefault("host_status", {}).setdefault(host, {})["precheck"] = precheck
@@ -834,6 +851,7 @@ def run_cluster(args: argparse.Namespace) -> int:
             chunk_size_submissions=args.chunk_size_submissions,
             workers=workers_per_host,
             uuid_namespace_seed=args.uuid_namespace_seed,
+            append=args.append,
             resume=args.resume,
         )
         worker_command = build_worker_command(config, remote_script_path)
